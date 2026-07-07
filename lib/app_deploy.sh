@@ -13,7 +13,7 @@ do_deploy_app() {
   mkdir -p "$releases_dir" /etc/telecom-manager /var/lib/telecom-manager /var/log/telecom-manager /var/lib/telecom-manager/backups
 
   # Fetch app from GitHub
-  local app_repo="${APP_REPO_URL:-https://github.com/telecom-vps/telecom-manager-app}"
+  local app_repo="${APP_REPO_URL:-https://github.com/JoethonDev/telecom-manager-app}"
   local app_ref="${APP_REF:-main}"
 
   git clone --depth 1 -b "$app_ref" "$app_repo" "$release_dir" 2>/dev/null || {
@@ -111,7 +111,7 @@ do_upgrade_app() {
   release_id="r$(date +%Y%m%d%H%M%S)"
   local release_dir="$releases_dir/$release_id"
 
-  local app_repo="${APP_REPO_URL:-https://github.com/telecom-vps/telecom-manager-app}"
+  local app_repo="${APP_REPO_URL:-https://github.com/JoethonDev/telecom-manager-app}"
   local app_ref="${APP_REF:-main}"
 
   git clone --depth 1 -b "$app_ref" "$app_repo" "$release_dir"

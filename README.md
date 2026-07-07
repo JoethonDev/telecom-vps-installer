@@ -5,7 +5,7 @@ Installs and manages a Telecom VPS with SSH SSL/stunnel, Xray VMess TCP TLS, Xra
 ## Usage
 
 ```bash
-curl -fsSL https://github.com/telecom-vps/telecom-vps-installer/releases/latest/download/bootstrap-install.sh | bash
+curl -fsSL https://github.com/JoethonDev/telecom-vps-installer/releases/latest/download/bootstrap-install.sh | bash
 ```
 
 ## Modes

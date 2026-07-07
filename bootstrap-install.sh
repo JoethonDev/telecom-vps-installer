@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-INSTALLER_REPO_URL="${INSTALLER_REPO_URL:-https://github.com/telecom-vps/telecom-vps-installer}"
+INSTALLER_REPO_URL="${INSTALLER_REPO_URL:-https://github.com/JoethonDev/telecom-vps-installer}"
 INSTALLER_REF="${INSTALLER_REF:-main}"
 INSTALLER_VERSION="${INSTALLER_VERSION:-}"
 
