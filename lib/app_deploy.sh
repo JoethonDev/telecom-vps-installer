@@ -12,36 +12,24 @@ do_deploy_app() {
 
   mkdir -p "$releases_dir" /etc/telecom-manager /var/lib/telecom-manager /var/log/telecom-manager /var/lib/telecom-manager/backups
 
-  # Fetch app from GitHub
   local app_repo="${APP_REPO_URL:-https://github.com/JoethonDev/telecom-manager-app}"
   local app_ref="${APP_REF:-main}"
 
   git clone --depth 1 -b "$app_ref" "$app_repo" "$release_dir" 2>/dev/null || {
-    # Fallback: copy from installer bundled app
     mkdir -p "$release_dir"
     cp -r "$SCRIPT_DIR/../telecom-manager-app/"* "$release_dir/" 2>/dev/null || true
   }
 
-  # Create Python venv
-  if [ ! -d "$current_link/venv" ]; then
-    python3 -m venv "$release_dir/venv"
-    if ! "$release_dir/venv/bin/python" -m ensurepip --upgrade 2>/dev/null; then
-      curl -sS https://bootstrap.pypa.io/get-pip.py | "$release_dir/venv/bin/python"
-    fi
-  else
-    # Reuse existing venv to avoid reinstall
+  if [ -d "$current_link/venv" ]; then
     cp -a "$current_link/venv" "$release_dir/venv"
+  else
+    python3 -m venv "$release_dir/venv"
   fi
+  source "$release_dir/venv/bin/activate"
 
-  if ! "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt"; then
-    if [ -f "$SCRIPT_DIR/../telecom-manager-app/requirements.txt" ]; then
-      "$release_dir/venv/bin/pip" install --no-input -r "$SCRIPT_DIR/../telecom-manager-app/requirements.txt"
-    else
-      "$release_dir/venv/bin/pip" install --no-input "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
-    fi
-  fi
+  pip install --no-input -r "$release_dir/requirements.txt" || \
+    pip install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
 
-  # Write env file
   cat > /etc/telecom-manager/telecom-manager.env <<EOF
 MANAGER_DOMAIN=${CONNECTION_DOMAIN:-}
 PANEL_DOMAIN=${PANEL_DOMAIN:-}
@@ -56,24 +44,21 @@ MANAGER_DB=/var/lib/telecom-manager/manager.db
 PANEL_PORT=${PANEL_PORT:-9000}
 FLASK_SECRET=${FLASK_SECRET:-}
 ADMIN_USER=${PANEL_ADMIN_USER:-admin}
-ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH:-$("$release_dir/venv/bin/python3" -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('admin'))")}
+ADMIN_PASSWORD_HASH=$(python3 -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('admin'))")
 EOF
   chmod 600 /etc/telecom-manager/telecom-manager.env
 
-  # Run migrations
   cd "$release_dir"
-  "$release_dir/venv/bin/python" manage.py migrate 2>/dev/null || true
-  "$release_dir/venv/bin/python" manage.py create-admin 2>/dev/null || true
+  python manage.py migrate 2>/dev/null || true
+  python manage.py create-admin 2>/dev/null || true
 
-  # Symlink current
   rm -f "$current_link"
   ln -sf "$release_dir" "$current_link"
 
-  # Install systemd service
   cat > /etc/systemd/system/telecom-manager.service <<SRV
 [Unit]
 Description=Telecom VPS Manager
-After=network.target ssh.service sshd-httpcustom.service xray.service stunnel4.service
+After=network.target ssh.service xray.service stunnel4.service
 
 [Service]
 User=telecom-web
@@ -100,7 +85,6 @@ SRV
   systemctl enable telecom-manager
   systemctl restart telecom-manager
 
-  # Keep one previous release
   local releases
   releases=($(ls -1d "$releases_dir"/r* 2>/dev/null | sort -r))
   if [ ${#releases[@]} -gt 2 ]; then
@@ -111,7 +95,7 @@ SRV
 }
 
 do_upgrade_app() {
-  log "Upgrading Telecom Manager application (app only — no infra changes)"
+  log "Upgrading Telecom Manager application"
 
   local current_link="/opt/telecom-manager/current"
   local releases_dir="/opt/telecom-manager/releases"
@@ -121,28 +105,21 @@ do_upgrade_app() {
 
   local app_repo="${APP_REPO_URL:-https://github.com/JoethonDev/telecom-manager-app}"
   local app_ref="${APP_REF:-main}"
-
   git clone --depth 1 -b "$app_ref" "$app_repo" "$release_dir"
 
-  # Copy existing venv
   if [ -d "$current_link/venv" ]; then
     cp -a "$current_link/venv" "$release_dir/venv"
   else
     python3 -m venv "$release_dir/venv"
-    if ! "$release_dir/venv/bin/python" -m ensurepip --upgrade 2>/dev/null; then
-      curl -sS https://bootstrap.pypa.io/get-pip.py | "$release_dir/venv/bin/python"
-    fi
   fi
+  source "$release_dir/venv/bin/activate"
 
-  if ! "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt"; then
-    "$release_dir/venv/bin/pip" install --no-input "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
-  fi
+  pip install --no-input -r "$release_dir/requirements.txt" || \
+    pip install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
 
   cd "$release_dir"
-  "$release_dir/venv/bin/python" manage.py migrate
-
-  # Test health before switching
-  "$release_dir/venv/bin/python" manage.py health-check 2>/dev/null || {
+  python manage.py migrate
+  python manage.py health-check 2>/dev/null || {
     log "Health check failed, aborting upgrade"
     rm -rf "$release_dir"
     exit 1
@@ -150,7 +127,6 @@ do_upgrade_app() {
 
   rm -f "$current_link"
   ln -sf "$release_dir" "$current_link"
-
   systemctl restart telecom-manager
 
   local releases
