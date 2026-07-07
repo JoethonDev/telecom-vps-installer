@@ -38,6 +38,10 @@ do_deploy_app() {
   "$release_dir/venv/bin/python3" -m pip install --no-input -r "$release_dir/requirements.txt" || \
     "$release_dir/venv/bin/python3" -m pip install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
 
+  if [ -z "${FLASK_SECRET:-}" ]; then
+    FLASK_SECRET=$("$release_dir/venv/bin/python3" -c "import secrets; print(secrets.token_hex(32))")
+  fi
+
   cat > /etc/telecom-manager/telecom-manager.env <<EOF
 MANAGER_DOMAIN=${CONNECTION_DOMAIN:-}
 PANEL_DOMAIN=${PANEL_DOMAIN:-}
@@ -50,9 +54,9 @@ PUBLIC_IP=${PUBLIC_IP:-}
 PUBLIC_IPV6=${PUBLIC_IPV6:-}
 MANAGER_DB=/var/lib/telecom-manager/manager.db
 PANEL_PORT=${PANEL_PORT:-9000}
-FLASK_SECRET=${FLASK_SECRET:-}
+FLASK_SECRET=${FLASK_SECRET}
 ADMIN_USER=${PANEL_ADMIN_USER:-admin}
-ADMIN_PASSWORD_HASH=$("$release_dir/venv/bin/python3" -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('admin'))")
+ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH:-}
 EOF
   chmod 600 /etc/telecom-manager/telecom-manager.env
   chown telecom-web:telecom-web /etc/telecom-manager/telecom-manager.env
@@ -61,7 +65,6 @@ EOF
 
   cd "$release_dir"
   "$release_dir/venv/bin/python3" manage.py migrate 2>/dev/null || true
-  "$release_dir/venv/bin/python3" manage.py create-admin 2>/dev/null || true
 
   rm -f "$current_link"
   ln -sf "$release_dir" "$current_link"
