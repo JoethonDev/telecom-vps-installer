@@ -17,6 +17,7 @@ BACKUP_DIR = Path("/var/lib/telecom-manager/backups")
 ALLOWED_XRAY_TAGS = {"vless-tcp-tls-vision", "vmess-tcp-tls"}
 VALID_COMMANDS = frozenset({
     "xray", "ssh", "status", "ports", "logs", "diagnose", "fix-permissions",
+    "port", "bandwidth", "nginx",
 })
 
 
@@ -389,6 +390,99 @@ def cmd_fix_permissions():
     log("permissions repaired")
 
 
+def cmd_port(args):
+    if not args or args[0] != "set" or len(args) < 3:
+        fail("usage: telecomctl port set <service> <port>")
+    service = args[1]
+    port = args[2]
+    log(f"port set {service} -> {port} not yet implemented on telecomctl side")
+    sys.exit(0)
+
+
+def cmd_bandwidth(args):
+    if args and args[0] == "users":
+        log("per-user bandwidth not yet implemented on telecomctl side")
+        return
+    log("bandwidth collection not yet implemented on telecomctl side")
+
+
+def cmd_nginx(args):
+    if not args or args[0] != "reconfigure":
+        fail("usage: telecomctl nginx reconfigure [--domain <domain>]")
+    domain = ""
+    for i, a in enumerate(args[1:], 1):
+        if a == "--domain" and i + 1 < len(args):
+            domain = args[i + 1]
+    env_domain = os.environ.get("PANEL_DOMAIN", "") or os.environ.get("CONNECTION_DOMAIN", "") or "localhost"
+    domain = domain or env_domain
+    nginx_config = f"/etc/nginx/sites-available/telecom-manager"
+    ssl_dir = "/etc/nginx/ssl"
+    panel_port = os.environ.get("PANEL_PORT", "9000")
+
+    http_block = f"""server {{
+    listen 80;
+    server_name {domain};
+
+    gzip on;
+    gzip_types text/css application/javascript text/plain;
+
+    location / {{
+        proxy_pass http://127.0.0.1:{panel_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }}
+}}"""
+    if domain and domain != "_":
+        cert = Path(ssl_dir) / f"{domain}.crt"
+        key = Path(ssl_dir) / f"{domain}.key"
+        if not cert.exists():
+            Path(ssl_dir).mkdir(parents=True, exist_ok=True)
+            subprocess.run([
+                "openssl", "req", "-x509", "-nodes", "-newkey", "rsa:2048",
+                "-keyout", str(key), "-out", str(cert),
+                "-days", "3650", "-subj", f"/CN={domain}",
+                "-addext", f"subjectAltName=DNS:{domain}",
+            ], check=True)
+            key.chmod(0o600)
+        https_block = f"""
+server {{
+    listen 443 ssl;
+    server_name {domain};
+
+    ssl_certificate {cert};
+    ssl_certificate_key {key};
+
+    gzip on;
+    gzip_types text/css application/javascript text/plain;
+
+    location / {{
+        proxy_pass http://127.0.0.1:{panel_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }}
+}}"""
+        config = http_block + "\n\n" + https_block
+    else:
+        config = http_block
+
+    Path(nginx_config).write_text(config)
+    test = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
+    if test.returncode != 0:
+        fail(f"nginx config test failed: {test.stderr}")
+    subprocess.run(["systemctl", "reload", "nginx"], capture_output=True)
+    log(f"nginx reconfigured for domain '{domain}'")
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: telecomctl <command> [args...]", file=sys.stderr)
@@ -405,6 +499,9 @@ def main():
         "logs": cmd_logs,
         "diagnose": cmd_diagnose,
         "fix-permissions": cmd_fix_permissions,
+        "port": cmd_port,
+        "bandwidth": cmd_bandwidth,
+        "nginx": cmd_nginx,
     }
     dispatch[cmd](args)
 

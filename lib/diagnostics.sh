@@ -7,14 +7,14 @@ do_diagnose() {
   echo
 
   echo "=== Services ==="
-  for svc in ssh sshd-httpcustom stunnel4 xray telecom-manager; do
+  for svc in ssh sshd-httpcustom stunnel4 xray telecom-manager nginx; do
     printf "%-25s " "$svc"
     systemctl is-active "$svc" 2>/dev/null || echo "unknown"
   done
 
   echo
   echo "=== Listening Ports ==="
-  ss -tlnp | grep -E ":${SSH_TARGET_PORT:-22}|:${SSH_COMPAT_PORT:-2222}|:${STUNNEL_PORT:-443}|:${VMESS_PORT:-2053}|:${VLESS_PORT:-8443}|:${PANEL_PORT:-9000}" || echo "  (none matched)"
+  ss -tlnp | grep -E ":${SSH_TARGET_PORT:-22}|:${SSH_COMPAT_PORT:-2222}|:${STUNNEL_PORT:-443}|:${VMESS_PORT:-2053}|:${VLESS_PORT:-8443}|:${PANEL_PORT:-9000}|:${NGINX_PORT:-80}" || echo "  (none matched)"
 
   echo
   echo "=== Xray Config Permissions ==="

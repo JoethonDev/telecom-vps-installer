@@ -15,6 +15,10 @@ TLS_SERVER_NAME="${TLS_SERVER_NAME:-localhost}"
 XRAY_CERT_DIR="${XRAY_CERT_DIR:-/etc/ssl/xray}"
 XRAY_CONFIG="${XRAY_CONFIG:-/usr/local/etc/xray/config.json}"
 TIMEZONE="${TIMEZONE:-}"
+NGINX_PORT="${NGINX_PORT:-80}"
+CONNECTION_DOMAIN="${CONNECTION_DOMAIN:-}"
+PANEL_DOMAIN="${PANEL_DOMAIN:-}"
+NGINX_SSL_DIR="${NGINX_SSL_DIR:-/etc/nginx/ssl}"
 
 log() {
   echo "============================================================"
@@ -47,6 +51,8 @@ source "$SCRIPT_DIR/lib/app_deploy.sh"
 source "$SCRIPT_DIR/lib/diagnostics.sh"
 # shellcheck source=lib/backup.sh
 source "$SCRIPT_DIR/lib/backup.sh"
+# shellcheck source=lib/nginx.sh
+source "$SCRIPT_DIR/lib/nginx.sh"
 
 do_install() {
   do_preflight
@@ -58,6 +64,7 @@ do_install() {
   do_configure_xray
   do_install_telecomctl
   do_deploy_app
+  do_setup_nginx
   log "Installation complete"
 }
 
@@ -80,6 +87,10 @@ do_uninstall() {
     systemctl disable "$unit" 2>/dev/null || true
   done
 
+  systemctl stop nginx 2>/dev/null || true
+  systemctl disable nginx 2>/dev/null || true
+  rm -f /etc/nginx/sites-enabled/telecom-manager /etc/nginx/sites-available/telecom-manager
+
   rm -f /etc/systemd/system/telecom-manager.service \
     /etc/systemd/system/telecom-manager-maintenance.service \
     /etc/systemd/system/telecom-manager-maintenance.timer \
@@ -99,7 +110,7 @@ do_setup_firewall() {
   log "Configuring firewall"
 
   if ufw status 2>/dev/null | grep -q "Status: active"; then
-    for rule in "${STUNNEL_PORT}/tcp" "${VMESS_PORT}/tcp" "${VLESS_PORT}/tcp"; do
+    for rule in "${STUNNEL_PORT}/tcp" "${VMESS_PORT}/tcp" "${VLESS_PORT}/tcp" "${NGINX_PORT}/tcp"; do
       if ! ufw status numbered 2>/dev/null | grep -q "${rule}"; then
         ufw allow "$rule" comment "telecom-manager" 2>/dev/null || true
       fi
