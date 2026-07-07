@@ -12,6 +12,9 @@ SSH_TARGET_PORT="${SSH_TARGET_PORT:-22}"
 SSH_COMPAT_PORT="${SSH_COMPAT_PORT:-2222}"
 PANEL_PORT="${PANEL_PORT:-9000}"
 TLS_SERVER_NAME="${TLS_SERVER_NAME:-localhost}"
+XRAY_CERT_DIR="${XRAY_CERT_DIR:-/etc/ssl/xray}"
+XRAY_CONFIG="${XRAY_CONFIG:-/usr/local/etc/xray/config.json}"
+TIMEZONE="${TIMEZONE:-}"
 
 log() {
   echo "============================================================"

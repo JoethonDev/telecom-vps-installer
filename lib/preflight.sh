@@ -14,6 +14,8 @@ require_supported_os() {
   fi
   # shellcheck source=/dev/null
   . /etc/os-release
+  ID="${ID:-linux}"
+  VERSION_ID="${VERSION_ID:-0}"
   local major minor
   major="${VERSION_ID%%.*}"
   minor="${VERSION_ID#*.}"
