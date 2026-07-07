@@ -5,6 +5,14 @@ MODE="${1:-install}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+STUNNEL_PORT="${STUNNEL_PORT:-443}"
+VMESS_PORT="${VMESS_PORT:-2053}"
+VLESS_PORT="${VLESS_PORT:-8443}"
+SSH_TARGET_PORT="${SSH_TARGET_PORT:-22}"
+SSH_COMPAT_PORT="${SSH_COMPAT_PORT:-2222}"
+PANEL_PORT="${PANEL_PORT:-9000}"
+TLS_SERVER_NAME="${TLS_SERVER_NAME:-localhost}"
+
 log() {
   echo "============================================================"
   echo "$1"
