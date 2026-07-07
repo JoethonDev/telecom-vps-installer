@@ -3,11 +3,11 @@ set -Eeuo pipefail
 
 INSTALLER_REPO_URL="${INSTALLER_REPO_URL:-https://github.com/JoethonDev/telecom-vps-installer}"
 INSTALLER_REF="${INSTALLER_REF:-main}"
-INSTALLER_VERSION="${INSTALLER_VERSION:-}"
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 echo "Fetching installer from $INSTALLER_REPO_URL (ref: $INSTALLER_REF)..."
-git clone --depth 1 -b "$INSTALLER_REF" "$INSTALLER_REPO_URL" "$TMPDIR/installer"
+curl -fsSL "$INSTALLER_REPO_URL/archive/refs/heads/$INSTALLER_REF.tar.gz" | tar -xz -C "$TMPDIR"
+mv "$TMPDIR/telecom-vps-installer-$INSTALLER_REF" "$TMPDIR/installer"
 exec "$TMPDIR/installer/install.sh" "$@"
