@@ -81,7 +81,6 @@ EnvironmentFile=/etc/telecom-manager/telecom-manager.env
 WorkingDirectory=$current_link
 UMask=0077
 PrivateTmp=true
-NoNewPrivileges=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
