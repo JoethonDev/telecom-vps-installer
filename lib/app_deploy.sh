@@ -25,10 +25,9 @@ do_deploy_app() {
   else
     python3 -m venv "$release_dir/venv"
   fi
-  source "$release_dir/venv/bin/activate"
 
-  pip install --no-input -r "$release_dir/requirements.txt" || \
-    pip install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
+  "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt" || \
+    "$release_dir/venv/bin/pip" install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
 
   cat > /etc/telecom-manager/telecom-manager.env <<EOF
 MANAGER_DOMAIN=${CONNECTION_DOMAIN:-}
@@ -44,13 +43,13 @@ MANAGER_DB=/var/lib/telecom-manager/manager.db
 PANEL_PORT=${PANEL_PORT:-9000}
 FLASK_SECRET=${FLASK_SECRET:-}
 ADMIN_USER=${PANEL_ADMIN_USER:-admin}
-ADMIN_PASSWORD_HASH=$(python3 -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('admin'))")
+ADMIN_PASSWORD_HASH=$("$release_dir/venv/bin/python3" -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('admin'))")
 EOF
   chmod 600 /etc/telecom-manager/telecom-manager.env
 
   cd "$release_dir"
-  python manage.py migrate 2>/dev/null || true
-  python manage.py create-admin 2>/dev/null || true
+  "$release_dir/venv/bin/python" manage.py migrate 2>/dev/null || true
+  "$release_dir/venv/bin/python" manage.py create-admin 2>/dev/null || true
 
   rm -f "$current_link"
   ln -sf "$release_dir" "$current_link"
@@ -112,14 +111,13 @@ do_upgrade_app() {
   else
     python3 -m venv "$release_dir/venv"
   fi
-  source "$release_dir/venv/bin/activate"
 
-  pip install --no-input -r "$release_dir/requirements.txt" || \
-    pip install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
+  "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt" || \
+    "$release_dir/venv/bin/pip" install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
 
   cd "$release_dir"
-  python manage.py migrate
-  python manage.py health-check 2>/dev/null || {
+  "$release_dir/venv/bin/python" manage.py migrate
+  "$release_dir/venv/bin/python" manage.py health-check 2>/dev/null || {
     log "Health check failed, aborting upgrade"
     rm -rf "$release_dir"
     exit 1
