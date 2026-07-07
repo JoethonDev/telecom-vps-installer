@@ -4,7 +4,8 @@ After=network.target
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=5min
+OnUnitActiveSec=10min
+AccuracySec=30s
 Unit=telecom-manager-maintenance.service
 
 [Install]
