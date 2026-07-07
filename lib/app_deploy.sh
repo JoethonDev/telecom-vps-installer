@@ -25,13 +25,21 @@ do_deploy_app() {
   # Create Python venv
   if [ ! -d "$current_link/venv" ]; then
     python3 -m venv "$release_dir/venv"
+    if ! "$release_dir/venv/bin/python" -m ensurepip --upgrade 2>/dev/null; then
+      curl -sS https://bootstrap.pypa.io/get-pip.py | "$release_dir/venv/bin/python"
+    fi
   else
     # Reuse existing venv to avoid reinstall
     cp -a "$current_link/venv" "$release_dir/venv"
   fi
 
-  "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt" 2>/dev/null || \
-    "$release_dir/venv/bin/pip" install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
+  if ! "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt"; then
+    if [ -f "$SCRIPT_DIR/../telecom-manager-app/requirements.txt" ]; then
+      "$release_dir/venv/bin/pip" install --no-input -r "$SCRIPT_DIR/../telecom-manager-app/requirements.txt"
+    else
+      "$release_dir/venv/bin/pip" install --no-input "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
+    fi
+  fi
 
   # Write env file
   cat > /etc/telecom-manager/telecom-manager.env <<EOF
@@ -121,9 +129,14 @@ do_upgrade_app() {
     cp -a "$current_link/venv" "$release_dir/venv"
   else
     python3 -m venv "$release_dir/venv"
+    if ! "$release_dir/venv/bin/python" -m ensurepip --upgrade 2>/dev/null; then
+      curl -sS https://bootstrap.pypa.io/get-pip.py | "$release_dir/venv/bin/python"
+    fi
   fi
 
-  "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt"
+  if ! "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt"; then
+    "$release_dir/venv/bin/pip" install --no-input "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
+  fi
 
   cd "$release_dir"
   "$release_dir/venv/bin/python" manage.py migrate
