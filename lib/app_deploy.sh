@@ -26,6 +26,11 @@ do_deploy_app() {
     python3 -m venv "$release_dir/venv"
   fi
 
+  # ponytail: ensurepip may be absent on minimal Debian with --no-install-recommends
+  if [ ! -f "$release_dir/venv/bin/pip" ]; then
+    "$release_dir/venv/bin/python3" -m ensurepip --upgrade --default-pip
+  fi
+
   "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt" || \
     "$release_dir/venv/bin/pip" install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
 
@@ -110,6 +115,11 @@ do_upgrade_app() {
     cp -a "$current_link/venv" "$release_dir/venv"
   else
     python3 -m venv "$release_dir/venv"
+  fi
+
+  # ponytail: ensurepip may be absent on minimal Debian with --no-install-recommends
+  if [ ! -f "$release_dir/venv/bin/pip" ]; then
+    "$release_dir/venv/bin/python3" -m ensurepip --upgrade --default-pip
   fi
 
   "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt" || \
