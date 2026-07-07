@@ -48,7 +48,7 @@ MANAGER_DB=/var/lib/telecom-manager/manager.db
 PANEL_PORT=${PANEL_PORT:-9000}
 FLASK_SECRET=${FLASK_SECRET:-}
 ADMIN_USER=${PANEL_ADMIN_USER:-admin}
-ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH:-}
+ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH:-$("$release_dir/venv/bin/python3" -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('admin'))")}
 EOF
   chmod 600 /etc/telecom-manager/telecom-manager.env
 
