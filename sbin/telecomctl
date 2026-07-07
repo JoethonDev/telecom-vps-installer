@@ -415,9 +415,10 @@ def cmd_nginx(args):
             domain = args[i + 1]
     env_domain = os.environ.get("PANEL_DOMAIN", "") or os.environ.get("CONNECTION_DOMAIN", "") or "localhost"
     domain = domain or env_domain
-    nginx_config = f"/etc/nginx/sites-available/telecom-manager"
+    nginx_config = "/etc/nginx/sites-available/telecom-manager"
     ssl_dir = "/etc/nginx/ssl"
     panel_port = os.environ.get("PANEL_PORT", "9000")
+    ssl_port = os.environ.get("NGINX_SSL_PORT", "443")
 
     http_block = f"""server {{
     listen 80;
@@ -451,7 +452,7 @@ def cmd_nginx(args):
             key.chmod(0o600)
         https_block = f"""
 server {{
-    listen 443 ssl;
+    listen {ssl_port} ssl;
     server_name {domain};
 
     ssl_certificate {cert};

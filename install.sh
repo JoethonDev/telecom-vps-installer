@@ -18,6 +18,8 @@ TIMEZONE="${TIMEZONE:-}"
 NGINX_PORT="${NGINX_PORT:-80}"
 CONNECTION_DOMAIN="${CONNECTION_DOMAIN:-}"
 PANEL_DOMAIN="${PANEL_DOMAIN:-}"
+NGINX_SSL_PORT="${NGINX_SSL_PORT:-443}"
+STUNNEL_FALLBACK_PORT="${STUNNEL_FALLBACK_PORT:-9443}"
 NGINX_SSL_DIR="${NGINX_SSL_DIR:-/etc/nginx/ssl}"
 
 log() {
@@ -110,7 +112,7 @@ do_setup_firewall() {
   log "Configuring firewall"
 
   if ufw status 2>/dev/null | grep -q "Status: active"; then
-    for rule in "${STUNNEL_PORT}/tcp" "${VMESS_PORT}/tcp" "${VLESS_PORT}/tcp" "${NGINX_PORT}/tcp"; do
+    for rule in "${STUNNEL_PORT}/tcp" "${VMESS_PORT}/tcp" "${VLESS_PORT}/tcp" "${NGINX_PORT}/tcp" "${NGINX_SSL_PORT}/tcp"; do
       if ! ufw status numbered 2>/dev/null | grep -q "${rule}"; then
         ufw allow "$rule" comment "telecom-manager" 2>/dev/null || true
       fi
