@@ -1,0 +1,413 @@
+#!/usr/bin/env python3
+"""telecomctl — privileged operations for Telecom Manager."""
+import sys
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import fcntl
+import time
+from pathlib import Path
+
+XRAY_CONFIG = Path("/usr/local/etc/xray/config.json")
+XRAY_CONFIG_LOCK = XRAY_CONFIG.with_suffix(".lock")
+XRAY_CERT_DIR = Path("/usr/local/etc/xray/certs")
+BACKUP_DIR = Path("/var/lib/telecom-manager/backups")
+ALLOWED_XRAY_TAGS = {"vless-tcp-tls-vision", "vmess-tcp-tls"}
+VALID_COMMANDS = frozenset({
+    "xray", "ssh", "status", "ports", "logs", "diagnose", "fix-permissions",
+})
+
+
+def log(msg):
+    print(f"telecomctl: {msg}", file=sys.stderr)
+
+
+def fail(msg, code=1):
+    log(f"error: {msg}")
+    sys.exit(code)
+
+
+def validate_username(u):
+    import re
+    if not re.match(r'^[a-zA-Z0-9_][a-zA-Z0-9_-]{2,31}$', u):
+        fail(f"invalid username: {u}")
+
+
+def validate_uuid(u):
+    import re
+    if not re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', u.lower()):
+        fail(f"invalid UUID: {u}")
+
+
+def validate_iso_date(s):
+    try:
+        time.strptime(s, "%Y-%m-%d")
+    except ValueError:
+        try:
+            time.strptime(s[:19], "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            fail(f"invalid date: {s} (use YYYY-MM-DD or ISO 8601)")
+
+
+def xray_config_read():
+    return json.loads(XRAY_CONFIG.read_text())
+
+
+def xray_config_write(cfg):
+    tmp = tempfile.NamedTemporaryFile(mode='w', dir=str(XRAY_CONFIG.parent), prefix='config.', suffix='.tmp', delete=False)
+    json.dump(cfg, tmp, indent=2)
+    tmp.close()
+    test = subprocess.run(["xray", "run", "-test", "-config", tmp.name], capture_output=True, text=True)
+    if test.returncode != 0:
+        os.unlink(tmp.name)
+        fail(f"xray config test failed: {test.stdout} {test.stderr}")
+    backup = XRAY_CONFIG.with_suffix(f".json.bak.{int(time.time())}")
+    if XRAY_CONFIG.exists():
+        shutil.copy2(str(XRAY_CONFIG), str(backup))
+    shutil.move(tmp.name, str(XRAY_CONFIG))
+    XRAY_CONFIG.chmod(0o644)
+    os.chown(str(XRAY_CONFIG), 0, 0)
+    restart = subprocess.run(["systemctl", "restart", "xray"], capture_output=True, text=True)
+    if restart.returncode != 0:
+        if backup.exists():
+            shutil.copy2(str(backup), str(XRAY_CONFIG))
+            subprocess.run(["systemctl", "restart", "xray"], capture_output=True, text=True)
+        fail(f"xray restart failed, rolled back: {restart.stdout} {restart.stderr}")
+    for old in sorted(XRAY_CONFIG.parent.glob("config.json.bak.*"), key=lambda p: p.stat().st_mtime)[:-5]:
+        old.unlink(missing_ok=True)
+
+
+def xray_lock():
+    XRAY_CONFIG_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    f = open(XRAY_CONFIG_LOCK, "w")
+    fcntl.flock(f, fcntl.LOCK_EX)
+    return f
+
+
+def xray_find_inbound_by_tag(cfg, tag):
+    for inbound in cfg.get("inbounds", []):
+        if inbound.get("tag") == tag:
+            return inbound
+    fail(f"inbound tag '{tag}' not found in xray config")
+
+
+def cmd_xray(args):
+    if not args:
+        fail("xray: subcommand required (add-vless, remove-vless, enable-vless, disable-vless, add-vmess, remove-vmess, enable-vmess, disable-vmess, status, test-config, restart, list-users)")
+    sub = args[0]
+    cmd_args = args[1:]
+
+    if sub == "add-vless":
+        username, uuid = _parse_username_uuid(cmd_args)
+        _xray_add_client("vless-tcp-tls-vision", username, uuid)
+    elif sub == "remove-vless":
+        username = _parse_username(cmd_args)
+        _xray_remove_client("vless-tcp-tls-vision", username)
+    elif sub == "enable-vless":
+        username, uuid = _parse_username_uuid(cmd_args)
+        _xray_add_client("vless-tcp-tls-vision", username, uuid)
+    elif sub == "disable-vless":
+        username = _parse_username(cmd_args)
+        _xray_remove_client("vless-tcp-tls-vision", username)
+    elif sub == "add-vmess":
+        username, uuid = _parse_username_uuid(cmd_args)
+        _xray_add_client("vmess-tcp-tls", username, uuid)
+    elif sub == "remove-vmess":
+        username = _parse_username(cmd_args)
+        _xray_remove_client("vmess-tcp-tls", username)
+    elif sub == "enable-vmess":
+        username, uuid = _parse_username_uuid(cmd_args)
+        _xray_add_client("vmess-tcp-tls", username, uuid)
+    elif sub == "disable-vmess":
+        username = _parse_username(cmd_args)
+        _xray_remove_client("vmess-tcp-tls", username)
+    elif sub == "status":
+        _xray_status()
+    elif sub == "test-config":
+        _xray_test_config()
+    elif sub == "restart":
+        _xray_restart()
+    elif sub == "list-users":
+        _xray_list_users()
+    else:
+        fail(f"unknown xray subcommand: {sub}")
+
+
+def _parse_username(args):
+    username = _get_flag(args, "--username")
+    if not username:
+        fail("--username is required")
+    validate_username(username)
+    return username
+
+
+def _parse_username_uuid(args):
+    username = _get_flag(args, "--username")
+    uuid = _get_flag(args, "--uuid")
+    if not username or not uuid:
+        fail("--username and --uuid are required")
+    validate_username(username)
+    validate_uuid(uuid)
+    return username, uuid
+
+
+def _get_flag(args, flag):
+    for i, a in enumerate(args):
+        if a == flag and i + 1 < len(args):
+            return args[i + 1]
+    return None
+
+
+def _xray_add_client(tag, username, uuid):
+    lock = xray_lock()
+    try:
+        cfg = xray_config_read()
+        inbound = xray_find_inbound_by_tag(cfg, tag)
+        clients = inbound["settings"]["clients"]
+        if any(c.get("email") == username for c in clients):
+            log(f"user {username} already exists in {tag}")
+            return
+        if tag == "vmess-tcp-tls":
+            clients.append({"id": uuid, "email": username, "level": 0, "alterId": 0})
+        elif tag == "vless-tcp-tls-vision":
+            clients.append({"id": uuid, "email": username, "level": 0, "flow": "xtls-rprx-vision"})
+        xray_config_write(cfg)
+        log(f"added {username} to {tag}")
+    finally:
+        lock.close()
+
+
+def _xray_remove_client(tag, username):
+    lock = xray_lock()
+    try:
+        cfg = xray_config_read()
+        inbound = xray_find_inbound_by_tag(cfg, tag)
+        clients = inbound["settings"]["clients"]
+        new_clients = [c for c in clients if c.get("email") != username]
+        if len(new_clients) == len(clients):
+            log(f"user {username} not found in {tag}")
+            return
+        inbound["settings"]["clients"] = new_clients
+        xray_config_write(cfg)
+        log(f"removed {username} from {tag}")
+    finally:
+        lock.close()
+
+
+def _xray_status():
+    r = subprocess.run(["systemctl", "is-active", "xray"], capture_output=True, text=True)
+    print(r.stdout.strip() or "inactive")
+
+
+def _xray_test_config():
+    r = subprocess.run(["xray", "run", "-test", "-config", str(XRAY_CONFIG)], capture_output=True, text=True)
+    if r.returncode == 0:
+        print("ok")
+    else:
+        print(r.stdout + r.stderr)
+        sys.exit(1)
+
+
+def _xray_restart():
+    r = subprocess.run(["systemctl", "restart", "xray"], capture_output=True, text=True)
+    if r.returncode != 0:
+        fail(f"xray restart failed: {r.stdout} {r.stderr}")
+    print("ok")
+
+
+def _xray_list_users():
+    cfg = xray_config_read()
+    for tag in ALLOWED_XRAY_TAGS:
+        inbound = xray_find_inbound_by_tag(cfg, tag)
+        for client in inbound["settings"]["clients"]:
+            print(json.dumps({"tag": tag, "email": client.get("email", ""), "id": client.get("id", "")}))
+
+
+def cmd_ssh(args):
+    if not args:
+        fail("ssh: subcommand required (add-user, disable-user, enable-user, delete-user, list-users)")
+    sub = args[0]
+    if sub == "add-user":
+        username = _get_flag(args, "--username")
+        password = _get_flag(args, "--password")
+        expires_at = _get_flag(args, "--expires-at")
+        if not username or not password or not expires_at:
+            fail("--username, --password, and --expires-at are required")
+        validate_username(username)
+        validate_iso_date(expires_at)
+        _ssh_add_user(username, password, expires_at)
+    elif sub == "disable-user":
+        username = _parse_username(args)
+        _ssh_disable_user(username)
+    elif sub == "enable-user":
+        username = _get_flag(args, "--username")
+        expires_at = _get_flag(args, "--expires-at")
+        if not username or not expires_at:
+            fail("--username and --expires-at are required")
+        validate_username(username)
+        validate_iso_date(expires_at)
+        _ssh_enable_user(username, expires_at)
+    elif sub == "delete-user":
+        username = _parse_username(args)
+        _ssh_delete_user(username)
+    elif sub == "list-users":
+        _ssh_list_users()
+    else:
+        fail(f"unknown ssh subcommand: {sub}")
+
+
+def _ssh_add_user(username, password, expires_at):
+    import subprocess as sp
+    if subprocess.run(["id", username], capture_output=True).returncode == 0:
+        fail(f"linux user {username} already exists")
+    r = sp.run(["useradd", "-m", "-s", "/bin/bash", "-G", "telecom-users", "-e", expires_at, username], capture_output=True, text=True)
+    if r.returncode != 0:
+        fail(f"useradd failed: {r.stdout} {r.stderr}")
+    r = sp.run(["chpasswd"], input=f"{username}:{password}", capture_output=True, text=True)
+    if r.returncode != 0:
+        sp.run(["userdel", "-r", username], capture_output=True)
+        fail(f"chpasswd failed: {r.stdout} {r.stderr}")
+    log(f"created linux user {username}")
+
+
+def _ssh_disable_user(username):
+    subprocess.run(["pkill", "-u", username], capture_output=True)
+    for cmd in [["usermod", "-L", username], ["chage", "-E", "0", username]]:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            fail(f"{cmd[0]} failed: {r.stdout} {r.stderr}")
+    log(f"disabled {username}")
+
+
+def _ssh_enable_user(username, expires_at):
+    for cmd in [["usermod", "-U", username], ["chage", "-E", expires_at, username], ["chsh", "-s", "/bin/bash", username]]:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            fail(f"{cmd[0]} failed: {r.stdout} {r.stderr}")
+    log(f"enabled {username}")
+
+
+def _ssh_delete_user(username):
+    subprocess.run(["pkill", "-u", username], capture_output=True)
+    for cmd in [["userdel", "-r", username], ["userdel", username]]:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode == 0:
+            break
+    log(f"deleted {username}")
+
+
+def _ssh_list_users():
+    r = subprocess.run(["getent", "passwd"], capture_output=True, text=True)
+    for line in r.stdout.splitlines():
+        parts = line.split(":")
+        if len(parts) >= 7:
+            print(json.dumps({"username": parts[0], "uid": parts[2], "shell": parts[6]}))
+
+
+def cmd_status():
+    services = ["ssh", "sshd", "sshd-httpcustom", "stunnel4", "xray", "telecom-manager"]
+    for svc in services:
+        r = subprocess.run(["systemctl", "is-active", svc], capture_output=True, text=True)
+        print(f"{svc}: {r.stdout.strip() or 'unknown'}")
+
+
+def cmd_ports():
+    r = subprocess.run(["ss", "-tlnp"], capture_output=True, text=True)
+    for line in r.stdout.splitlines():
+        if "LISTEN" in line:
+            print(line)
+
+
+def cmd_logs(args):
+    service = _get_flag(args, "--service") or "xray"
+    lines = _get_flag(args, "--lines") or "100"
+    r = subprocess.run(["journalctl", "-u", service, "--no-pager", "-n", lines], capture_output=True, text=True)
+    print(r.stdout, end="")
+
+
+def cmd_diagnose():
+    print("=== Services ===")
+    cmd_status()
+    print("\n=== Ports ===")
+    cmd_ports()
+    print("\n=== Xray config permissions ===")
+    for p in [XRAY_CONFIG, XRAY_CERT_DIR / "server.crt", XRAY_CERT_DIR / "server.key"]:
+        if p.exists():
+            s = p.stat()
+            print(f"{p}: mode={oct(s.st_mode)[-3:]} uid={s.st_uid} gid={s.st_gid}")
+    print("\n=== Xray error log (last 50) ===")
+    r = subprocess.run(["journalctl", "-u", "xray", "--no-pager", "-n", "50", "-p", "err"], capture_output=True, text=True)
+    print(r.stdout, end="")
+    print("\n=== Xray users ===")
+    try:
+        _xray_list_users()
+    except Exception as e:
+        print(f"  error: {e}")
+
+
+def cmd_fix_permissions():
+    dirs = [
+        ("/usr/local/etc", 0o755, 0, 0),
+        ("/usr/local/etc/xray", 0o755, 0, 0),
+        ("/usr/local/etc/xray/certs", 0o755, 0, 0),
+        ("/var/log/xray", 0o755, None, None),
+    ]
+    xray_user = "nobody"
+    r = subprocess.run(["systemctl", "show", "xray.service", "-P", "User"], capture_output=True, text=True)
+    if r.returncode == 0 and r.stdout.strip():
+        xray_user = r.stdout.strip()
+    for d, mode, uid, gid in dirs:
+        Path(d).mkdir(parents=True, exist_ok=True)
+        os.chmod(d, mode)
+        if uid is not None:
+            os.chown(d, uid, gid if gid is not None else uid)
+    if XRAY_CONFIG.exists():
+        XRAY_CONFIG.chmod(0o644)
+        os.chown(str(XRAY_CONFIG), 0, 0)
+    for cert_name, mode in [("server.crt", 0o644), ("server.key", 0o600)]:
+        p = XRAY_CERT_DIR / cert_name
+        if p.exists():
+            p.chmod(mode)
+            os.chown(str(p), 0, 0) if cert_name == "server.crt" else os.chown(str(p), 0, 0)
+    if XRAY_CERT_DIR.joinpath("server.key").exists():
+        import pwd
+        try:
+            uid = pwd.getpwnam(xray_user).pw_uid
+            os.chown(str(XRAY_CERT_DIR / "server.key"), uid, -1)
+        except KeyError:
+            pass
+        XRAY_CERT_DIR.joinpath("server.key").chmod(0o600)
+    for log_file in ["/var/log/xray/access.log", "/var/log/xray/error.log"]:
+        Path(log_file).touch(mode=0o644, exist_ok=True)
+        try:
+            uid = pwd.getpwnam(xray_user).pw_uid
+            os.chown(log_file, uid, -1)
+        except KeyError:
+            pass
+    log("permissions repaired")
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: telecomctl <command> [args...]", file=sys.stderr)
+        sys.exit(1)
+    cmd = sys.argv[1]
+    args = sys.argv[2:]
+    if cmd not in VALID_COMMANDS:
+        fail(f"unknown command: {cmd}")
+    dispatch = {
+        "xray": cmd_xray,
+        "ssh": cmd_ssh,
+        "status": cmd_status,
+        "ports": cmd_ports,
+        "logs": cmd_logs,
+        "diagnose": cmd_diagnose,
+        "fix-permissions": cmd_fix_permissions,
+    }
+    dispatch[cmd](args)
+
+
+if __name__ == "__main__":
+    main()
