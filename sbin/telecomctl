@@ -57,7 +57,7 @@ def xray_config_read():
 
 
 def xray_config_write(cfg):
-    tmp = tempfile.NamedTemporaryFile(mode='w', dir=str(XRAY_CONFIG.parent), prefix='config.', suffix='.tmp', delete=False)
+    tmp = tempfile.NamedTemporaryFile(mode='w', dir=str(XRAY_CONFIG.parent), prefix='config.', suffix='.json', delete=False)
     json.dump(cfg, tmp, indent=2)
     tmp.close()
     test = subprocess.run(["xray", "run", "-test", "-config", tmp.name], capture_output=True, text=True)
