@@ -12,6 +12,10 @@ do_deploy_app() {
 
   mkdir -p "$releases_dir" /etc/telecom-manager /var/lib/telecom-manager /var/log/telecom-manager /var/lib/telecom-manager/backups
 
+  if ! id -u telecom-web >/dev/null 2>&1; then
+    useradd --system --home-dir /var/lib/telecom-manager --shell /usr/sbin/nologin telecom-web
+  fi
+
   local app_repo="${APP_REPO_URL:-https://github.com/JoethonDev/telecom-manager-app}"
   local app_ref="${APP_REF:-main}"
 
@@ -51,6 +55,9 @@ ADMIN_USER=${PANEL_ADMIN_USER:-admin}
 ADMIN_PASSWORD_HASH=$("$release_dir/venv/bin/python3" -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('admin'))")
 EOF
   chmod 600 /etc/telecom-manager/telecom-manager.env
+  chown telecom-web:telecom-web /etc/telecom-manager/telecom-manager.env
+
+  chown -R telecom-web:telecom-web "$release_dir" /var/lib/telecom-manager /var/log/telecom-manager
 
   cd "$release_dir"
   "$release_dir/venv/bin/python3" manage.py migrate 2>/dev/null || true
@@ -111,6 +118,10 @@ do_upgrade_app() {
   local app_ref="${APP_REF:-main}"
   git clone --depth 1 -b "$app_ref" "$app_repo" "$release_dir"
 
+  if ! id -u telecom-web >/dev/null 2>&1; then
+    useradd --system --home-dir /var/lib/telecom-manager --shell /usr/sbin/nologin telecom-web
+  fi
+
   if [ -d "$current_link/venv" ]; then
     cp -a "$current_link/venv" "$release_dir/venv"
   else
@@ -124,6 +135,8 @@ do_upgrade_app() {
 
   "$release_dir/venv/bin/python3" -m pip install --no-input -r "$release_dir/requirements.txt" || \
     "$release_dir/venv/bin/python3" -m pip install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
+
+  chown -R telecom-web:telecom-web "$release_dir" /var/lib/telecom-manager /var/log/telecom-manager
 
   cd "$release_dir"
   "$release_dir/venv/bin/python3" manage.py migrate
