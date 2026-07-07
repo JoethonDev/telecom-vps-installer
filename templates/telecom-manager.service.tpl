@@ -15,7 +15,7 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 LockPersonality=true
 RestrictRealtime=true
-ExecStart=${VENV_DIR}/bin/gunicorn -w 1 -b 127.0.0.1:${PANEL_PORT} telecom_manager.app:app
+ExecStart=${VENV_DIR}/bin/python3 -m gunicorn -w 1 -b 127.0.0.1:${PANEL_PORT} telecom_manager.app:app
 Restart=always
 RestartSec=3
 
