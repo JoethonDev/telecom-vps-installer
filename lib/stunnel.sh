@@ -21,6 +21,15 @@ do_setup_stunnel() {
 
   sed -i 's/^ENABLED=.*/ENABLED=1/' /etc/default/stunnel4 || true
 
+  # ponytail: on reinstall nginx may already hold 443; fall back so both can coexist
+  if ss -tlnp "sport = :$STUNNEL_PORT" 2>/dev/null | grep -q LISTEN; then
+    if ! ss -tlnp "sport = :$STUNNEL_PORT" 2>/dev/null | grep -qE "stunnel|stunnel4"; then
+      log "Port $STUNNEL_PORT is already in use — moving stunnel to $STUNNEL_FALLBACK_PORT"
+      STUNNEL_PORT="$STUNNEL_FALLBACK_PORT"
+      ufw allow "${STUNNEL_PORT}/tcp" comment "telecom-manager" 2>/dev/null || true
+    fi
+  fi
+
   local accept_addr="0.0.0.0"
   if [ -n "${PUBLIC_IPV6:-}" ]; then
     accept_addr="::"
