@@ -26,13 +26,13 @@ do_deploy_app() {
     python3 -m venv "$release_dir/venv"
   fi
 
-  # ponytail: ensurepip may be absent on minimal Debian with --no-install-recommends
-  if [ ! -f "$release_dir/venv/bin/pip" ]; then
+  # ponytail: venv pip binary may carry stale shebang after cp -a; use module
+  if ! "$release_dir/venv/bin/python3" -m pip --version >/dev/null 2>&1; then
     "$release_dir/venv/bin/python3" -m ensurepip --upgrade --default-pip
   fi
 
-  "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt" || \
-    "$release_dir/venv/bin/pip" install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
+  "$release_dir/venv/bin/python3" -m pip install --no-input -r "$release_dir/requirements.txt" || \
+    "$release_dir/venv/bin/python3" -m pip install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
 
   cat > /etc/telecom-manager/telecom-manager.env <<EOF
 MANAGER_DOMAIN=${CONNECTION_DOMAIN:-}
@@ -53,8 +53,8 @@ EOF
   chmod 600 /etc/telecom-manager/telecom-manager.env
 
   cd "$release_dir"
-  "$release_dir/venv/bin/python" manage.py migrate 2>/dev/null || true
-  "$release_dir/venv/bin/python" manage.py create-admin 2>/dev/null || true
+  "$release_dir/venv/bin/python3" manage.py migrate 2>/dev/null || true
+  "$release_dir/venv/bin/python3" manage.py create-admin 2>/dev/null || true
 
   rm -f "$current_link"
   ln -sf "$release_dir" "$current_link"
@@ -117,17 +117,17 @@ do_upgrade_app() {
     python3 -m venv "$release_dir/venv"
   fi
 
-  # ponytail: ensurepip may be absent on minimal Debian with --no-install-recommends
-  if [ ! -f "$release_dir/venv/bin/pip" ]; then
+  # ponytail: venv pip binary may carry stale shebang after cp -a; use module
+  if ! "$release_dir/venv/bin/python3" -m pip --version >/dev/null 2>&1; then
     "$release_dir/venv/bin/python3" -m ensurepip --upgrade --default-pip
   fi
 
-  "$release_dir/venv/bin/pip" install --no-input -r "$release_dir/requirements.txt" || \
-    "$release_dir/venv/bin/pip" install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
+  "$release_dir/venv/bin/python3" -m pip install --no-input -r "$release_dir/requirements.txt" || \
+    "$release_dir/venv/bin/python3" -m pip install "Flask==3.1.3" "gunicorn==26.0.0" "Werkzeug==3.1.8"
 
   cd "$release_dir"
-  "$release_dir/venv/bin/python" manage.py migrate
-  "$release_dir/venv/bin/python" manage.py health-check 2>/dev/null || {
+  "$release_dir/venv/bin/python3" manage.py migrate
+  "$release_dir/venv/bin/python3" manage.py health-check 2>/dev/null || {
     log "Health check failed, aborting upgrade"
     rm -rf "$release_dir"
     exit 1
