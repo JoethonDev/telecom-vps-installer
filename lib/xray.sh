@@ -74,7 +74,7 @@ do_configure_xray() {
         "clients": []
       },
       "streamSettings": {
-        "network": "tcp",
+        "network": "tcp,udp",
         "security": "tls",
         "tcpSettings": {
           "header": {
@@ -102,7 +102,7 @@ do_configure_xray() {
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "tcp",
+        "network": "tcp,udp",
         "security": "tls",
         "tcpSettings": {
           "header": {

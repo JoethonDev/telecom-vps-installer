@@ -13,7 +13,7 @@
         "clients": []
       },
       "streamSettings": {
-        "network": "tcp",
+        "network": "tcp,udp",
         "security": "tls",
         "tcpSettings": {
           "header": {
@@ -41,7 +41,7 @@
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "tcp",
+        "network": "tcp,udp",
         "security": "tls",
         "tcpSettings": {
           "header": {
